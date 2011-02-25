@@ -25,25 +25,22 @@
 # the Free Software Foundation, 51 Franklin Street, Fifth Floor,
 # Boston, MA 02110-1301, USA.
 
-"""Pygit2 test definitions.
+"""Tests for Walker objects."""
 
-These tests are run automatically with 'setup.py test', but can also be run
-manually.
-"""
-
-import sys
 import unittest
 
+import pygit2
+import utils
 
-def test_suite():
-    names = ['blob', 'commit', 'index', 'repository', 'tag', 'tree', 'walker']
-    modules = ['test.test_%s' % n for n in names]
-    return unittest.defaultTestLoader.loadTestsFromNames(modules)
+COMMIT_SHA = '5fe808e8953c12735680c257f56600cb0de44b10'
 
 
-def main():
-    unittest.main(module=__name__, defaultTest='test_suite', argv=sys.argv[:1])
+class WalkerTest(utils.BareRepoTestCase):
+
+    def test_walker_sorting(self):
+        walker = pygit2.Walker(self.repo)
+        walker.sorting(pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_REVERSE)
 
 
 if __name__ == '__main__':
-    main()
+  unittest.main()

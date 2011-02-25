@@ -70,6 +70,12 @@ typedef struct {
     git_index_entry *entry;
 } IndexEntry;
 
+typedef struct {
+    PyObject_HEAD
+    Repository *repo;
+    git_revwalk *walk;
+} Walker;
+
 static PyTypeObject RepositoryType;
 static PyTypeObject ObjectType;
 static PyTypeObject CommitType;
@@ -79,6 +85,7 @@ static PyTypeObject BlobType;
 static PyTypeObject TagType;
 static PyTypeObject IndexType;
 static PyTypeObject IndexEntryType;
+static PyTypeObject WalkerType;
 
 static PyObject *GitError;
 
@@ -1621,6 +1628,112 @@ static PyTypeObject IndexEntryType = {
     0,                                         /* tp_new */
 };
 
+static int
+Walker_init(Walker *self, PyObject *args, PyObject *kwds) {
+    Repository *repo = NULL;
+    git_revwalk *walk;
+    int err;
+
+    if (kwds) {
+        PyErr_Format(PyExc_TypeError, "%s takes no keyword arugments",
+                     self->ob_type->tp_name);
+        return -1;
+    }
+
+    if (!PyArg_ParseTuple(args, "O", &repo))
+        return -1;
+
+    if (!PyObject_TypeCheck(repo, &RepositoryType)) {
+        PyErr_Format(PyExc_TypeError,
+                     "repo argument must be %.200s, not %.200s",
+                     RepositoryType.tp_name, repo->ob_type->tp_name);
+        return -1;
+    }
+
+    err = git_revwalk_new(&walk, repo->repo);
+    if (err < 0) {
+        Error_set(err);
+        return -1;
+    }
+
+    Py_INCREF(repo);
+    self->repo = repo;
+    self->walk = walk;
+    return 0;
+}
+
+static void
+Walker_dealloc(Walker *self)
+{
+    git_revwalk_free(self->walk);
+    Py_XDECREF(self->repo);
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+static PyObject *
+Walker_sorting(Walker *self, PyObject *value) {
+    int err;
+    unsigned int sorting = PyInt_AsLong(value);
+
+    if (PyErr_Occurred())
+        return NULL;
+
+    err = git_revwalk_sorting(self->walk, sorting);
+    if (err < 0) {
+        return Error_set(err);
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef Walker_methods[] = {
+    {"sorting", (PyCFunction)Walker_sorting, METH_O,
+     "Set how the revisions are to be walked."},
+    {NULL}
+};
+
+static PyTypeObject WalkerType = {
+    PyObject_HEAD_INIT(NULL)
+    0,                                         /* ob_size */
+    "pygit2.Walker",                           /* tp_name */
+    sizeof(Walker),                            /* tp_basicsize */
+    0,                                         /* tp_itemsize */
+    (destructor)Walker_dealloc,                /* tp_dealloc */
+    0,                                         /* tp_print */
+    0,                                         /* tp_getattr */
+    0,                                         /* tp_setattr */
+    0,                                         /* tp_compare */
+    0,                                         /* tp_repr */
+    0,                                         /* tp_as_number */
+    0,                                         /* tp_as_sequence */
+    0,                                         /* tp_as_mapping */
+    0,                                         /* tp_hash */
+    0,                                         /* tp_call */
+    0,                                         /* tp_str */
+    0,                                         /* tp_getattro */
+    0,                                         /* tp_setattro */
+    0,                                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,  /* tp_flags */
+    "Walker",                                  /* tp_doc */
+    0,                                         /* tp_traverse */
+    0,                                         /* tp_clear */
+    0,                                         /* tp_richcompare */
+    0,                                         /* tp_weaklistoffset */
+    0,                                         /* tp_iter */
+    0,                                         /* tp_iternext */
+    Walker_methods,                            /* tp_methods */
+    0,                                         /* tp_members */
+    0,                                         /* tp_getset */
+    0,                                         /* tp_base */
+    0,                                         /* tp_dict */
+    0,                                         /* tp_descr_get */
+    0,                                         /* tp_descr_set */
+    0,                                         /* tp_dictoffset */
+    (initproc)Walker_init,                     /* tp_init */
+    0,                                         /* tp_alloc */
+    0,                                         /* tp_new */
+};
+
 static PyMethodDef module_methods[] = {
     {NULL}
 };
@@ -1664,6 +1777,9 @@ initpygit2(void)
     IndexEntryType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&IndexEntryType) < 0)
         return;
+    WalkerType.tp_new = PyType_GenericNew;
+    if (PyType_Ready(&WalkerType) < 0)
+        return;
 
     m = Py_InitModule3("pygit2", module_methods,
                        "Python bindings for libgit2.");
@@ -1701,9 +1817,16 @@ initpygit2(void)
     Py_INCREF(&IndexEntryType);
     PyModule_AddObject(m, "IndexEntry", (PyObject *)&IndexEntryType);
 
+    Py_INCREF(&WalkerType);
+    PyModule_AddObject(m, "Walker", (PyObject *)&WalkerType);
+
     PyModule_AddIntConstant(m, "GIT_OBJ_ANY", GIT_OBJ_ANY);
     PyModule_AddIntConstant(m, "GIT_OBJ_COMMIT", GIT_OBJ_COMMIT);
     PyModule_AddIntConstant(m, "GIT_OBJ_TREE", GIT_OBJ_TREE);
     PyModule_AddIntConstant(m, "GIT_OBJ_BLOB", GIT_OBJ_BLOB);
     PyModule_AddIntConstant(m, "GIT_OBJ_TAG", GIT_OBJ_TAG);
+    PyModule_AddIntConstant(m, "GIT_SORT_NONE", GIT_SORT_NONE);
+    PyModule_AddIntConstant(m, "GIT_SORT_TOPOLOGICAL", GIT_SORT_TOPOLOGICAL);
+    PyModule_AddIntConstant(m, "GIT_SORT_TIME", GIT_SORT_TIME);
+    PyModule_AddIntConstant(m, "GIT_SORT_REVERSE", GIT_SORT_REVERSE);
 }
