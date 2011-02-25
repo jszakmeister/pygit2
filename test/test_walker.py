@@ -40,6 +40,7 @@ class WalkerTest(utils.BareRepoTestCase):
     def test_walker_sorting(self):
         walker = pygit2.Walker(self.repo)
         walker.sorting(pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_REVERSE)
+        walker.push(COMMIT_SHA)
 
 
 if __name__ == '__main__':
