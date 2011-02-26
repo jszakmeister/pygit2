@@ -1707,12 +1707,35 @@ Walker_push(Walker *self, PyObject *sha1) {
     Py_RETURN_NONE;
 }
 
+static PyObject *
+Walker_hide(Walker *self, PyObject *sha1) {
+    git_oid oid;
+    git_commit *commit;
+    int err;
+
+    err = py_str_to_git_oid(sha1, &oid);
+    if (err < 0)
+        return Error_set_py_obj(err, sha1);
+
+    err = git_commit_lookup(&commit, self->repo->repo, &oid);
+    if (err < 0)
+        return Error_set(err);
+
+    err = git_revwalk_hide(self->walk, commit);
+    if (err < 0)
+        return Error_set(err);
+
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef Walker_methods[] = {
     {"sorting", (PyCFunction)Walker_sorting, METH_O,
      "Change the sorting mode when iterating through "
      "the repository's contents."},
     {"push", (PyCFunction)Walker_push, METH_O,
      "Mark a commit to start traversal from."},
+    {"hide", (PyCFunction)Walker_hide, METH_O,
+     "Mark a commit (and its ancestors) uninteresting for the output."},
     {NULL}
 };
 
