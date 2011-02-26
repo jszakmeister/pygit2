@@ -76,6 +76,11 @@ typedef struct {
     git_revwalk *walk;
 } Walker;
 
+typedef struct {
+    PyObject_HEAD
+    Walker *walker;
+} WalkerIter;
+
 static PyTypeObject RepositoryType;
 static PyTypeObject ObjectType;
 static PyTypeObject CommitType;
@@ -86,6 +91,7 @@ static PyTypeObject TagType;
 static PyTypeObject IndexType;
 static PyTypeObject IndexEntryType;
 static PyTypeObject WalkerType;
+static PyTypeObject WalkerIterType;
 
 static PyObject *GitError;
 
@@ -1628,6 +1634,83 @@ static PyTypeObject IndexEntryType = {
     0,                                         /* tp_new */
 };
 
+static PyObject *
+WalkerIter_iternext(WalkerIter *self)
+{
+    git_commit *commit;
+    Object *py_obj;
+    Walker *walker = self->walker;
+    int err;
+
+    err = git_revwalk_next(&commit, walker->walk);
+    if (err == GIT_EREVWALKOVER)
+    {
+        PyErr_SetNone(PyExc_StopIteration);
+        return NULL;
+    }
+    else if (err < 0)
+    {
+        Error_set(err);
+        return NULL;
+    }
+
+    py_obj = wrap_object((git_object *)commit, walker->repo);
+    if (!py_obj)
+        return NULL;
+
+    py_obj->own_obj = 0;
+    return (PyObject*)py_obj;
+}
+
+static void
+WalkerIter_dealloc(WalkerIter *self)
+{
+    Py_XDECREF(self->walker);
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+static PyTypeObject WalkerIterType = {
+    PyObject_HEAD_INIT(NULL)
+    0,                                         /* ob_size */
+    "pygit2._WalkerIter",                      /* tp_name */
+    sizeof(WalkerIter),                        /* tp_basicsize */
+    0,                                         /* tp_itemsize */
+    (destructor)WalkerIter_dealloc,            /* tp_dealloc */
+    0,                                         /* tp_print */
+    0,                                         /* tp_getattr */
+    0,                                         /* tp_setattr */
+    0,                                         /* tp_compare */
+    0,                                         /* tp_repr */
+    0,                                         /* tp_as_number */
+    0,                                         /* tp_as_sequence */
+    0,                                         /* tp_as_mapping */
+    0,                                         /* tp_hash */
+    0,                                         /* tp_call */
+    0,                                         /* tp_str */
+    0,                                         /* tp_getattro */
+    0,                                         /* tp_setattro */
+    0,                                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER, /* tp_flags */
+    "Internal iterator for Walker",            /* tp_doc */
+    0,                                         /* tp_traverse */
+    0,                                         /* tp_clear */
+    0,                                         /* tp_richcompare */
+    0,                                         /* tp_weaklistoffset */
+    0,                                         /* tp_iter */
+    (iternextfunc)WalkerIter_iternext,         /* tp_iternext */
+    0,                                         /* tp_methods */
+    0,                                         /* tp_members */
+    0,                                         /* tp_getset */
+    0,                                         /* tp_base */
+    0,                                         /* tp_dict */
+    0,                                         /* tp_descr_get */
+    0,                                         /* tp_descr_set */
+    0,                                         /* tp_dictoffset */
+    0,                                         /* tp_init */
+    0,                                         /* tp_alloc */
+    0,                                         /* tp_new */
+};
+
 static int
 Walker_init(Walker *self, PyObject *args, PyObject *kwds) {
     Repository *repo = NULL;
@@ -1728,6 +1811,21 @@ Walker_hide(Walker *self, PyObject *sha1) {
     Py_RETURN_NONE;
 }
 
+static PyObject *
+Walker_iter(Walker *self)
+{
+    WalkerIter *iter;
+
+    iter = (WalkerIter *)WalkerIterType.tp_alloc(&WalkerIterType, 0);
+    if (!iter)
+        return NULL;
+
+    iter->walker = self;
+    Py_INCREF(self);
+
+    return (PyObject *)iter;
+}
+
 static PyMethodDef Walker_methods[] = {
     {"sorting", (PyCFunction)Walker_sorting, METH_O,
      "Change the sorting mode when iterating through "
@@ -1760,13 +1858,14 @@ static PyTypeObject WalkerType = {
     0,                                         /* tp_getattro */
     0,                                         /* tp_setattro */
     0,                                         /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,  /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE   /* tp_flags */
+        | Py_TPFLAGS_HAVE_ITER,
     "Walker",                                  /* tp_doc */
     0,                                         /* tp_traverse */
     0,                                         /* tp_clear */
     0,                                         /* tp_richcompare */
     0,                                         /* tp_weaklistoffset */
-    0,                                         /* tp_iter */
+    (getiterfunc)Walker_iter,                  /* tp_iter */
     0,                                         /* tp_iternext */
     Walker_methods,                            /* tp_methods */
     0,                                         /* tp_members */
@@ -1826,6 +1925,9 @@ initpygit2(void)
         return;
     WalkerType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&WalkerType) < 0)
+        return;
+    WalkerIterType.tp_new = PyType_GenericNew;
+    if (PyType_Ready(&WalkerIterType) < 0)
         return;
 
     m = Py_InitModule3("pygit2", module_methods,

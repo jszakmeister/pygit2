@@ -39,9 +39,20 @@ class WalkerTest(utils.BareRepoTestCase):
 
     def test_walker_sorting(self):
         walker = pygit2.Walker(self.repo)
-        walker.sorting(pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_REVERSE)
+        walker.sorting(pygit2.GIT_SORT_TOPOLOGICAL)
         walker.push(COMMIT_SHA)
 
+        # Commits apparently don't have ids right now
+        expected_messages = [('Second test data commit.\n\n'
+                              'This commit has some additional text.\n'),
+                              'Initial test data commit.\n']
+
+        for commit in walker:
+            expected_message = expected_messages.pop(0)
+            self.assertEquals(expected_message, commit.message)
+
+        self.assertEquals(0, len(expected_messages),
+                          "Expected more commits!")
 
 if __name__ == '__main__':
   unittest.main()
